@@ -73,7 +73,7 @@ em{font-style:italic;color:var(--accent)}
   display:flex;align-items:center;
   padding:48px 0;overflow:hidden;
 }
-.hero-grid{position:relative;display:grid;grid-template-columns:1.1fr .9fr;gap:140px;align-items:center}
+.hero-grid{position:relative;display:grid;grid-template-columns:1.3fr .7fr;gap:64px;align-items:center}
 .hero-main{position:relative;z-index:2}
 .hero-type{position:relative}
 .hero-note{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:22px}
@@ -84,8 +84,8 @@ em{font-style:italic;color:var(--accent)}
   animation:rise .7s cubic-bezier(.2,.7,.2,1) .1s forwards;
 }
 .word .line{display:block}
-.word .big{font-size:clamp(60px,10vw,160px);margin-left:-.1em;margin-right:-.165em}
-.word .rest{font-size:clamp(36px,5.6vw,92px)}
+.word .big{font-size:clamp(50px,7.6vw,128px);margin-left:-.1em;margin-right:-.165em}
+.word .rest{font-size:clamp(28px,4.3vw,72px)}
 .word .big-s{margin-left:-.04em;margin-right:-.06em}
 @keyframes rise{to{opacity:1;transform:translateY(0)}}
 .hero-head-faint{
