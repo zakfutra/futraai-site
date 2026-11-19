@@ -1,0 +1,922 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Reconciliation Demo</title>
+<style>
+  html,body{overflow:hidden;height:100%}
+</style>
+<style>
+  /* Layout: a single full-width Reconciliation page, no sidebar, since that is
+     the page being shown. The same table carries a statement from raw bank
+     lines to coded, matched bills, and a closing beat shows it is one page of a
+     larger dashboard. Same brand tokens, clickable step tracker and pause
+     controls as the other demos. Deliberate dark "theatre" treatment, single
+     theme by choice. Narrow containers (the mobile embed) switch to a portrait
+     stage. */
+  :root{
+    --ink:#0a0a0a;
+    --panel:#141414;
+    --paper:#f5f5f3;
+    --text:#f5f5f3;
+    --dim:rgba(245,245,243,.55);
+    --accent:#ff5a1f;
+    --stop:#ff8a8a;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--text);
+    font-family:'Instrument Sans',system-ui,sans-serif;
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    padding:28px 16px;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--dim);
+  }
+  .stage-wrap{width:100%;max-width:760px;container-type:inline-size;container-name:demo}
+  .stage{
+    position:relative;
+    width:100%;
+    aspect-ratio:16/10;
+    background:var(--ink);
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 30px 60px -20px rgba(0,0,0,.6);
+  }
+  .stage.paused *{animation-play-state:paused!important}
+  .brand{
+    position:absolute;bottom:12px;right:16px;z-index:9;
+    font-family:'Playfair Display',serif;font-weight:400;font-size:13px;
+    color:var(--dim);letter-spacing:.02em;opacity:.8;
+  }
+  .brand span{color:var(--accent);font-style:italic}
+
+  /* ---------- step tracker (clickable) ---------- */
+  .tracker{
+    position:absolute;top:10px;left:0;right:0;z-index:9;
+    display:flex;align-items:center;justify-content:center;gap:6px;row-gap:4px;flex-wrap:wrap;
+    padding:0 10px;
+    opacity:0;transition:opacity .4s ease;pointer-events:none;
+  }
+  .tracker.show{opacity:1;pointer-events:auto}
+  .tstep{
+    display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.03em;
+    color:var(--dim);padding:5px 10px 5px 7px;border-radius:20px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+    transition:color .3s ease, background .3s ease, border-color .3s ease;
+  }
+  .tstep:hover{border-color:rgba(255,255,255,.25)}
+  .tstep:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .tstep .tnum{
+    width:16px;height:16px;border-radius:50%;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;background:rgba(255,255,255,.08);color:var(--dim);
+    transition:background .3s ease, color .3s ease;
+  }
+  .tstep.active{color:var(--text);background:rgba(255,90,31,.1);border-color:rgba(255,90,31,.35)}
+  .tstep.active .tnum{background:var(--accent);color:var(--ink)}
+  .tstep.done .tnum{background:rgba(255,90,31,.3);color:var(--text)}
+  .ttrack{width:16px;height:1px;background:rgba(255,255,255,.12)}
+
+  /* ---------- shared layer mechanics ---------- */
+  .layer{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;transition:opacity .5s ease;
+  }
+  .layer.show{opacity:1}
+
+  /* ---------- title scene ---------- */
+  .layer[data-layer="title"]{align-items:center}
+  .layer[data-layer="dash"]{align-items:flex-start}
+  .title-wrap{text-align:left;width:100%;padding:0 56px;display:flex;flex-direction:column;gap:14px}
+  .title-wrap > *{max-width:380px}
+  .title-for{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;
+    color:var(--dim);text-transform:uppercase;
+    opacity:0;transform:translateY(8px);transition:opacity .5s ease, transform .5s ease;
+  }
+  .title-main{
+    font-family:'Playfair Display',serif;font-weight:400;
+    font-size:clamp(22px,4.4cqw,30px);line-height:1.18;
+    opacity:0;transform:translateY(10px);transition:opacity .5s ease .12s, transform .5s ease .12s;
+  }
+  .title-problem{
+    font-size:13.5px;line-height:1.45;color:var(--dim);margin:0;
+    opacity:0;transform:translateY(10px);transition:opacity .5s ease .22s, transform .5s ease .22s;
+  }
+  .title-saves{
+    display:flex;flex-direction:column;gap:9px;
+    opacity:0;transform:translateY(10px);transition:opacity .5s ease .34s, transform .5s ease .34s;
+  }
+  .title-saves-label{
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;
+    color:var(--dim);text-transform:uppercase;
+  }
+  .title-save-row{display:flex;align-items:baseline;gap:8px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--text)}
+  .title-save-row b{font-family:'Instrument Sans',sans-serif;color:var(--accent);font-weight:600;white-space:nowrap}
+  .layer[data-layer="title"].show .title-for,
+  .layer[data-layer="title"].show .title-main,
+  .layer[data-layer="title"].show .title-problem,
+  .layer[data-layer="title"].show .title-saves{opacity:1;transform:translateY(0)}
+  .title-preview{
+    position:absolute;right:44px;top:50%;margin-top:-75px;width:250px;height:150px;
+    background:var(--panel);border:1px solid rgba(255,255,255,.2);border-radius:10px;
+    padding:12px 15px;overflow:hidden;box-sizing:border-box;
+    box-shadow:0 34px 60px -14px rgba(0,0,0,.8);
+    opacity:0;transform:translateY(22px) rotate(-3deg);
+    transition:opacity .7s ease .2s, transform .7s cubic-bezier(.2,.8,.2,1) .2s;
+  }
+  .layer[data-layer="title"].show .title-preview{opacity:.95;transform:translateY(0) rotate(-3deg)}
+  .tp-top{display:flex;align-items:center;gap:5px;margin-bottom:8px}
+  .tp-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.25);flex:0 0 auto}
+  .tp-title{font-family:'Instrument Sans',sans-serif;font-weight:600;font-size:11px;color:var(--text);margin-left:4px}
+  .tp-row{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:7px 8px;margin:0 -8px;border-top:1px solid rgba(255,255,255,.08);
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);
+  }
+  .tp-row:first-of-type{border-top:none}
+  .tp-row b{font-family:'Instrument Sans',sans-serif;font-weight:600;color:var(--text);font-size:11px}
+  .tp-row.pick{background:rgba(255,90,31,.14);border-radius:6px}
+  .tp-amt{color:var(--text);font-variant-numeric:tabular-nums}
+
+  /* ---------- end scene ---------- */
+  .layer[data-layer="end"]{z-index:7;padding-bottom:70px;background:rgba(10,10,10,.92)}
+  .end-wrap{display:flex;gap:26px;align-items:center;padding:0 24px;
+    opacity:0;transform:translateY(8px);transition:opacity .5s ease .15s, transform .5s ease .15s}
+  .layer[data-layer="end"].show .end-wrap{opacity:1;transform:translateY(0)}
+  .end-side{
+    width:190px;flex:0 0 auto;background:#111;border:1px solid rgba(255,255,255,.1);border-radius:10px;
+    padding:10px 8px;display:flex;flex-direction:column;gap:2px;
+  }
+  .side-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase;padding:2px 8px 6px}
+  .side-item{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--dim);padding:4px 8px;border-radius:5px;white-space:nowrap}
+  .side-item.active{color:var(--text);background:rgba(255,90,31,.14)}
+  .end-main{max-width:300px;display:flex;flex-direction:column;gap:10px}
+
+  /* ---------- dashboard window ---------- */
+  .dash-window{
+    position:relative;
+    width:90%;height:calc(100% - 107px);margin-top:62px;background:#111111;border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;
+    box-shadow:0 24px 50px -16px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06);
+    transition:filter .5s ease;
+  }
+  .dash-window.closing{filter:brightness(.3)}
+  .dash-top{
+    flex:0 0 auto;display:flex;align-items:baseline;gap:10px;
+    padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07);
+  }
+  .ddot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.15);align-self:center;margin-right:2px}
+  .dash-title{font-family:'Instrument Sans',sans-serif;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;flex:none}
+  .dash-sub{font-family:'Instrument Sans',sans-serif;font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .dash-main{flex:1;position:relative;min-width:0}
+  .dash-pane{
+    position:absolute;inset:0;padding:12px 18px;
+    opacity:0;pointer-events:none;transition:opacity .4s ease, transform .4s ease;
+    transform:translateY(5px);
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .dash-pane.show{opacity:1;transform:translateY(0)}
+  .gen-btn{
+    align-self:flex-start;background:var(--accent);color:#fff;font-size:13px;font-weight:600;
+    padding:7px 16px;border-radius:6px;border:none;font-family:'Instrument Sans',sans-serif;
+    transition:transform .15s ease, filter .15s ease, opacity .3s ease;
+  }
+  .gen-btn.pressed{transform:scale(.96);filter:brightness(1.18)}
+  .gen-btn.off{opacity:.3}
+  .chip{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text);background:rgba(255,90,31,.12);border:1px solid rgba(255,90,31,.3);padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .chip.quiet{color:var(--dim);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+
+  /* ---------- upload pane ---------- */
+  .upload-zone{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    border:1.5px dashed rgba(255,255,255,.16);border-radius:10px;
+    background:rgba(255,255,255,.02);
+  }
+  .upload-icon{width:22px;height:22px;color:var(--dim)}
+  .upload-file{
+    display:flex;align-items:center;gap:6px;
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);
+  }
+  .upload-file svg{width:13px;height:13px;color:var(--dim);flex:0 0 auto}
+  .upload-status{
+    font-family:'Instrument Sans',sans-serif;font-size:12px;color:var(--dim);
+    opacity:0;transition:opacity .3s ease;
+  }
+  .upload-status.show{opacity:1}
+  .upload-status.done{color:var(--accent)}
+  .upload-split{display:flex;gap:8px;opacity:0;transform:translateY(4px);transition:opacity .35s ease, transform .35s ease}
+  .upload-split.show{opacity:1;transform:translateY(0)}
+
+  /* ---------- table pane ---------- */
+  .rec-tabs{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .rtab{
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);
+    padding:3px 9px;border-radius:14px;display:flex;align-items:center;gap:5px;
+  }
+  .rtab.active{color:var(--text);background:rgba(255,90,31,.12)}
+  .rtab b{color:var(--accent);font-weight:600}
+  .rec-table{border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;flex:0 0 auto}
+  .rec-head,.rec-row{
+    display:grid;grid-template-columns:44px minmax(0,1.9fr) 66px minmax(0,1.25fr) 38px minmax(0,1.5fr);gap:8px;
+    padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;
+  }
+  .rec-head{color:var(--dim);background:rgba(255,255,255,.03);text-transform:uppercase;letter-spacing:.04em;font-size:10px}
+  .rec-row{border-top:1px solid rgba(255,255,255,.06);align-items:center;transition:background .3s ease, opacity .3s ease}
+  .rec-row.pick{background:rgba(255,90,31,.08)}
+  .rec-row.faded{opacity:.4}
+  .rec-head > div,.rec-row > div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rec-desc b{display:block;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rec-desc span{display:block;color:var(--dim);font-size:10px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rec-amt{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+  .rec-contact,.rec-account{color:var(--text)}
+  .ph{color:rgba(255,255,255,.22)}
+  .inv{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid transparent}
+  .inv.ok{color:var(--accent);background:rgba(255,90,31,.12);border-color:rgba(255,90,31,.35)}
+  .inv.none{color:var(--stop);background:rgba(255,90,90,.12);border-color:rgba(255,120,120,.4)}
+  .inv.skip{color:var(--dim);background:rgba(255,255,255,.06)}
+  .legend{display:flex;flex-wrap:wrap;gap:6px;opacity:0;transform:translateY(4px);transition:opacity .35s ease, transform .35s ease;flex:0 0 auto}
+  .legend.show{opacity:1;transform:translateY(0)}
+  .tier{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .tier b{color:var(--text);font-weight:500}
+  .legend-note{margin:0;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);opacity:0;transition:opacity .35s ease;flex:0 0 auto}
+  .legend-note.show{opacity:1}
+
+  /* ---------- review pane ---------- */
+  .review-card{
+    flex:1;background:var(--panel);border:1px solid rgba(255,255,255,.1);border-radius:10px;
+    padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:0;
+  }
+  .rv-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:7px}
+  .rv-title{font-family:'Instrument Sans',sans-serif;font-weight:600;font-size:13px;color:var(--text)}
+  .rv-amt{font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:14px;color:var(--accent)}
+  .rv-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);margin-top:-2px}
+  .rv-cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;flex:1;min-height:0}
+  .rv-col{display:flex;flex-direction:column;gap:7px;min-width:0}
+  .rv-sec{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .rv-field{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,.08);
+  }
+  .rv-field-label{flex:0 0 auto;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:4px}
+  .rv-check{width:9px;height:9px;flex:0 0 auto;color:var(--accent);opacity:0;transition:opacity .25s ease}
+  .rv-field.filled .rv-check{opacity:1}
+  .rv-field-value{flex:1;min-width:0;text-align:right;font-family:'Instrument Sans',sans-serif;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rv-field-value .ph{color:rgba(255,255,255,.22)}
+  .rv-learned{
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);line-height:1.4;
+    opacity:0;transition:opacity .3s ease;
+  }
+  .rv-learned.show{opacity:1;color:var(--accent)}
+  .rv-source{display:flex;align-items:baseline;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.4;color:var(--text);opacity:0;transform:translateY(4px);transition:opacity .3s ease, transform .3s ease}
+  .rv-source.show{opacity:1;transform:translateY(0)}
+  .rv-source .ok{color:var(--accent);flex:0 0 auto}
+  .rv-pdf{
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);
+    padding:7px 10px;border-radius:6px;background:rgba(255,90,31,.1);border:1px solid rgba(255,90,31,.3);
+    opacity:0;transform:translateY(4px);transition:opacity .35s ease, transform .35s ease;
+  }
+  .rv-pdf.show{opacity:1;transform:translateY(0)}
+  .rv-pdf b{color:var(--accent);font-weight:600}
+
+  /* ---------- push pane ---------- */
+  .push-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;flex:0 0 auto}
+  .push-list{border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;flex:0 0 auto}
+  .push-row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:8px 12px;border-top:1px solid rgba(255,255,255,.06);
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);
+    opacity:0;transform:translateY(4px);transition:opacity .3s ease, transform .3s ease, background .3s ease;
+  }
+  .push-row.in{opacity:1;transform:translateY(0)}
+  .push-row:first-child{border-top:none}
+  .push-row.hl{background:rgba(255,90,31,.1)}
+  .push-tag{font-size:10px;color:var(--dim);background:rgba(255,255,255,.05);padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .push-tag.new{color:var(--accent);background:rgba(255,90,31,.1)}
+  .push-held{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--stop);opacity:0;transition:opacity .3s ease;flex:0 0 auto}
+  .push-held.show{opacity:1}
+  .push-actions{display:flex;align-items:center;gap:12px;flex:0 0 auto;flex-wrap:wrap}
+  .token{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text);
+    border:1px dashed rgba(255,255,255,.35);padding:5px 10px;border-radius:6px;
+    opacity:0;transition:opacity .3s ease;
+  }
+  .token.show{opacity:1}
+  .push-success{
+    font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--text);
+    opacity:0;transition:opacity .4s ease;flex:0 0 auto;
+  }
+  .push-success.show{opacity:1}
+
+  /* ---------- caption ---------- */
+  .caption-band{
+    position:absolute;left:0;right:0;bottom:0;z-index:8;
+    padding:16px 22px;
+    background:linear-gradient(to top, rgba(10,10,10,.92), rgba(10,10,10,0));
+    pointer-events:none;
+  }
+  .caption{
+    font-family:'Instrument Sans',sans-serif;font-weight:700;
+    font-size:clamp(13px,2cqw,19px);line-height:1.25;max-width:78%;
+    opacity:0;transform:translateY(5px);transition:opacity .3s ease, transform .3s ease;
+  }
+  .caption.show{opacity:1;transform:translateY(0)}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex;gap:10px}
+  .ctl{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    color:var(--dim);background:transparent;border:1px solid rgba(255,255,255,.14);
+    padding:7px 14px;border-radius:7px;cursor:pointer;
+  }
+  .ctl:hover{color:var(--text);border-color:rgba(255,255,255,.3)}
+  .ctl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  @media (prefers-reduced-motion: reduce){
+    .layer,.dash-pane,.tstep,.caption,.rv-field,.rv-learned,.rv-source,.rv-pdf,.push-row,.token,.push-success,.legend,.legend-note,.upload-split,.end-wrap,.rec-row{transition:none!important;animation:none!important}
+  }
+
+  /* ---------- narrow container: portrait stage (comes last to win the cascade) ---------- */
+  @container demo (max-width:480px){
+    .stage{aspect-ratio:4/5.3}
+    .tracker{top:12px;gap:4px;flex-wrap:nowrap}
+    .tstep{padding:4px 8px 4px 6px;gap:5px}
+    .tstep:not(.active){padding:4px 5px}
+    .tstep:not(.active) .tlabel{display:none}
+    .ttrack{width:10px}
+    .layer[data-layer="title"]{align-items:center}
+    .title-wrap{max-width:400px;margin:0 auto;padding:0 24px;gap:12px}
+    .title-wrap > *{max-width:none}
+    .title-preview{display:none}
+    .layer[data-layer="dash"]{align-items:flex-start}
+    .dash-window{width:94%;height:calc(100% - 140px);margin-top:60px}
+    .dash-sub{display:none}
+    .dash-pane{padding:10px 10px;gap:8px}
+    .rec-head,.rec-row{grid-template-columns:minmax(0,1.7fr) 62px minmax(0,1.5fr);gap:6px;padding:6px 8px}
+    .c-date,.c-contact,.c-acct{display:none}
+    .rtab:nth-child(n+3){display:none}
+    .rv-cols{grid-template-columns:1fr;gap:10px}
+    .review-card{padding:10px 12px;gap:6px}
+    .push-row{flex-direction:column;align-items:flex-start;gap:4px;padding:7px 10px}
+    .layer[data-layer="end"]{padding-bottom:84px}
+    .end-wrap{flex-direction:column;gap:12px}
+    .end-side{display:none}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<div class="eyebrow">Case study reel &#183; reconciliation tool</div>
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <div class="brand">Futra <span>AI</span></div>
+
+    <div class="tracker" id="tracker">
+      <button class="tstep" type="button" data-step="0"><span class="tnum">1</span><span class="tlabel">Code the bill</span></button>
+      <div class="ttrack"></div>
+      <button class="tstep" type="button" data-step="1"><span class="tnum">2</span><span class="tlabel">Find the invoice</span></button>
+      <div class="ttrack"></div>
+      <button class="tstep" type="button" data-step="2"><span class="tnum">3</span><span class="tlabel">Push to Xero</span></button>
+    </div>
+
+    <div class="layer" id="layerTitle" data-layer="title">
+      <div class="title-preview">
+        <div class="tp-top"><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-dot"></span><span class="tp-title">Reconciliation</span></div>
+        <div class="tp-row pick"><b>Printing</b><span class="tp-amt">&#163;142.00</span></div>
+        <div class="tp-row"><b>Catering</b><span class="tp-amt">&#163;860.00</span></div>
+        <div class="tp-row"><b>Taxi</b><span class="tp-amt">&#163;39.50</span></div>
+      </div>
+      <div class="title-wrap">
+        <div class="title-for">For finance teams &amp; the agencies that run them</div>
+        <div class="title-main">Bank line in. Draft bill out.</div>
+        <p class="title-problem">Month-end means matching every bank line to its invoice by hand.</p>
+        <div class="title-saves">
+          <div class="title-saves-label">What it does</div>
+          <div class="title-save-row"><b>Codes</b> each line from your saved supplier rules</div>
+          <div class="title-save-row"><b>Finds</b> the invoice in Gmail, near the charge date</div>
+          <div class="title-save-row"><b>Nothing</b> reaches Xero until you confirm it</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer" id="layerDash" data-layer="dash">
+      <div class="dash-window" id="dashWindow">
+        <div class="dash-top">
+          <div class="ddot"></div><div class="ddot"></div><div class="ddot"></div>
+          <div class="dash-title">Reconciliation</div>
+          <div class="dash-sub">Upload statement lines &#8594; review each bill &#8594; push DRAFT bills to Xero</div>
+        </div>
+        <div class="dash-main">
+
+          <div class="dash-pane" data-pane="upload">
+            <div class="upload-zone">
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 15V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              <div class="upload-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>Statement_Nov.csv</div>
+              <div class="upload-status" id="uploadStatus">Reading statement lines...</div>
+              <div class="upload-split" id="uploadSplit"><span class="chip">4 bills to prepare</span><span class="chip quiet">1 incoming payment skipped</span></div>
+            </div>
+          </div>
+
+          <div class="dash-pane" data-pane="table">
+            <div class="rec-tabs">
+              <div class="rtab active">Preparing <b>4</b></div>
+              <div class="rtab">Ready to push</div>
+              <div class="rtab">Pushed to Xero <b>41</b></div>
+              <div class="rtab">Skipped <b>1</b></div>
+            </div>
+            <div class="rec-table">
+              <div class="rec-head"><div class="c-date">Date</div><div>Description</div><div>Amount</div><div class="c-contact">Contact</div><div class="c-acct">Acct</div><div>Invoice</div></div>
+              <div class="rec-row" data-row="print">
+                <div class="c-date">12 Nov</div>
+                <div class="rec-desc"><b>Printing</b><span>CARD PAYMENT STERLING</span></div>
+                <div class="rec-amt">&#163;142.00</div>
+                <div class="rec-contact c-contact" data-c="contact"></div>
+                <div class="rec-account c-acct" data-c="acct"></div>
+                <div data-c="inv"></div>
+              </div>
+              <div class="rec-row" data-row="cater">
+                <div class="c-date">13 Nov</div>
+                <div class="rec-desc"><b>Catering</b><span>DD SUPPLIER REF 4471</span></div>
+                <div class="rec-amt">&#163;860.00</div>
+                <div class="rec-contact c-contact" data-c="contact"></div>
+                <div class="rec-account c-acct" data-c="acct"></div>
+                <div data-c="inv"></div>
+              </div>
+              <div class="rec-row" data-row="taxi">
+                <div class="c-date">13 Nov</div>
+                <div class="rec-desc"><b>Taxi</b><span>CARD PAYMENT AMOUNT</span></div>
+                <div class="rec-amt">&#163;39.50</div>
+                <div class="rec-contact c-contact" data-c="contact"></div>
+                <div class="rec-account c-acct" data-c="acct"></div>
+                <div data-c="inv"></div>
+              </div>
+              <div class="rec-row" data-row="sub">
+                <div class="c-date">14 Nov</div>
+                <div class="rec-desc"><b>Subscription</b><span>CARD PAYMENT 88213</span></div>
+                <div class="rec-amt">&#163;73.20</div>
+                <div class="rec-contact c-contact" data-c="contact"></div>
+                <div class="rec-account c-acct" data-c="acct"></div>
+                <div data-c="inv"></div>
+              </div>
+              <div class="rec-row faded" data-row="pay">
+                <div class="c-date">14 Nov</div>
+                <div class="rec-desc"><b>Payment received</b><span>BACS CREDIT</span></div>
+                <div class="rec-amt">&#163;1,200.00</div>
+                <div class="rec-contact c-contact"><span class="ph">-</span></div>
+                <div class="rec-account c-acct"><span class="ph">-</span></div>
+                <div><span class="inv skip">Skipped, not a bill</span></div>
+              </div>
+            </div>
+            <div class="legend" id="legend">
+              <span class="tier"><b>PDF 90%+</b> attached</span>
+              <span class="tier"><b>Email text 70%+</b> screenshot</span>
+              <span class="tier"><b>Weak</b> needs review</span>
+              <span class="tier"><b>None</b> flagged</span>
+            </div>
+            <p class="legend-note" id="legendNote">Reads real PDFs and email text. It never guesses at photos of receipts.</p>
+          </div>
+
+          <div class="dash-pane" data-pane="review">
+            <div class="review-card">
+              <div class="rv-head"><div class="rv-title">Review bill: Print &amp; Co</div><div class="rv-amt">&#163;142.00</div></div>
+              <div class="rv-sub">Bank date 12 Nov &#183; CARD PAYMENT STERLING</div>
+              <div class="rv-cols">
+                <div class="rv-col">
+                  <div class="rv-sec">Coding</div>
+                  <div class="rv-field" data-rv="contact">
+                    <div class="rv-field-label"><svg class="rv-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Contact</div>
+                    <div class="rv-field-value"><span class="ph">-</span></div>
+                  </div>
+                  <div class="rv-field" data-rv="account">
+                    <div class="rv-field-label"><svg class="rv-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Account</div>
+                    <div class="rv-field-value"><span class="ph">-</span></div>
+                  </div>
+                  <div class="rv-field" data-rv="tax">
+                    <div class="rv-field-label"><svg class="rv-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Tax type</div>
+                    <div class="rv-field-value"><span class="ph">-</span></div>
+                  </div>
+                  <div class="rv-learned" id="rvLearned">Saved rule for Print &amp; Co applied. A fixed rule, not a guess.</div>
+                </div>
+                <div class="rv-col">
+                  <div class="rv-sec">Finding the invoice</div>
+                  <div class="rv-source" id="rvSearch"><span class="ok">&#10003;</span><span>Searched Gmail for "Print &amp; Co", within 21 days of the charge</span></div>
+                  <div class="rv-source" id="rvFound"><span class="ok">&#10003;</span><span>PDF found. Supplier and amount match</span></div>
+                  <div class="rv-pdf" id="rvPdf">PDF attached &#183; <b>96% match</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dash-pane" data-pane="push">
+            <div class="push-label">Preview &#183; nothing sent yet</div>
+            <div class="push-list">
+              <div class="push-row" data-prow="print"><span>Print &amp; Co &#183; &#163;142.00</span><span class="push-tag new">new bill, PDF attached</span></div>
+              <div class="push-row" data-prow="cater"><span>Harbour Catering &#183; &#163;860.00</span><span class="push-tag" id="caterTag">existing draft found, completed</span></div>
+              <div class="push-row" data-prow="taxi"><span>RideCo &#183; &#163;39.50</span><span class="push-tag new">new bill, email screenshot</span></div>
+            </div>
+            <div class="push-held" id="pushHeld">1 held for review: Subscription &#183; &#163;73.20, no match found</div>
+            <div class="push-actions">
+              <span class="token" id="token">Confirmation token issued &#183; single use</span>
+              <button class="gen-btn off" id="pushBtn" type="button">Confirm &amp; push DRAFT bills</button>
+            </div>
+            <div class="push-success" id="pushSuccess">3 DRAFT bills ready. Review, approve and pay in Xero.</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="layer" id="layerEnd" data-layer="end">
+      <div class="end-wrap">
+        <div class="end-side">
+          <div class="side-label">One page of a larger platform</div>
+          <div class="side-item active">Reconciliation</div>
+          <div class="side-item">Inbox</div>
+          <div class="side-item">Shopify to Xero Sync</div>
+          <div class="side-item">Xero Invoices</div>
+          <div class="side-item">CRM</div>
+          <div class="side-item">Daily Summary</div>
+          <div class="side-item">Activity Log</div>
+          <div class="side-item">Settings</div>
+        </div>
+        <div class="end-main">
+          <div class="title-saves-label">What you can rely on</div>
+          <div class="title-save-row"><b>Draft only.</b> The bookkeeper approves and pays in Xero</div>
+          <div class="title-save-row"><b>Two steps.</b> A push without confirmation is rejected</div>
+          <div class="title-save-row"><b>Logged.</b> Every push, attach and skip has a timestamp</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="caption-band"><div class="caption" id="caption"></div></div>
+  </div>
+</div>
+<div class="controls">
+  <button class="ctl" id="pauseBtn" type="button">&#10074;&#10074; pause</button>
+  <button class="ctl" id="replayBtn" type="button">&#8635; play from start</button>
+</div>
+
+<script>
+(function(){
+  function $(id){ return document.getElementById(id); }
+  var layers = { title: $('layerTitle'), dash: $('layerDash'), end: $('layerEnd') };
+  var stage = $('stage');
+  var tracker = $('tracker');
+  var tsteps = Array.prototype.slice.call(document.querySelectorAll('.tstep'));
+  var panes = Array.prototype.slice.call(document.querySelectorAll('.dash-pane'));
+  var dashWindow = $('dashWindow');
+  var caption = $('caption');
+  var uploadStatus = $('uploadStatus');
+  var uploadSplit = $('uploadSplit');
+  var legend = $('legend');
+  var legendNote = $('legendNote');
+  var rvFields = Array.prototype.slice.call(document.querySelectorAll('.rv-field'));
+  var rvLearned = $('rvLearned');
+  var rvSearch = $('rvSearch');
+  var rvFound = $('rvFound');
+  var rvPdf = $('rvPdf');
+  var token = $('token');
+  var pushBtn = $('pushBtn');
+  var pushHeld = $('pushHeld');
+  var pushSuccess = $('pushSuccess');
+  var caterTag = $('caterTag');
+  var pushRows = Array.prototype.slice.call(document.querySelectorAll('.push-row'));
+  var pauseBtn = $('pauseBtn');
+  var replayBtn = $('replayBtn');
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var runId = 0;
+  var paused = false;
+
+  var rvValues = { contact: 'Print & Co', account: '429 General Expenses', tax: '20% VAT' };
+  var rowEls = {};
+  Array.prototype.forEach.call(document.querySelectorAll('.rec-row[data-row]'), function(r){ rowEls[r.dataset.row] = r; });
+  var DATA = {
+    print: { contact: 'Print & Co', acct: '429', inv: 'PDF 96%', cls: 'ok' },
+    cater: { contact: 'Harbour Catering', acct: '420', inv: 'Draft completed', cls: 'ok' },
+    taxi:  { contact: 'RideCo', acct: '493', inv: 'Email screenshot', cls: 'ok' },
+    sub:   { contact: '', acct: '', inv: 'No match found', cls: 'none' }
+  };
+
+  // Waits for ms of unpaused time. A newer run makes the old one reject, which stops it.
+  function wait(ms, myRun){
+    return new Promise(function(resolve, reject){
+      var left = ms;
+      (function tick(){
+        if (myRun !== runId) return reject('stale');
+        if (!paused) left -= 50;
+        if (left <= 0) return resolve();
+        setTimeout(tick, 50);
+      })();
+    });
+  }
+  var capTimer;
+  function setCaption(text){
+    clearTimeout(capTimer);
+    caption.classList.remove('show');
+    capTimer = setTimeout(function(){
+      caption.textContent = text;
+      if (text) caption.classList.add('show');
+    }, 160);
+  }
+  // Shows a caption and holds long enough to read it: 0.35s a word plus 0.6s, never under 1.8s.
+  function hold(text){ return Math.max(1800, text.split(/\s+/).length * 350 + 600); }
+  async function say(text, myRun, extra){
+    setCaption(text);
+    await wait(hold(text) + (extra || 0), myRun);
+  }
+
+  function shownLayers(){ return Object.keys(layers).filter(function(k){ return layers[k].classList.contains('show'); }); }
+  function setLayers(names){ Object.keys(layers).forEach(function(k){ layers[k].classList.toggle('show', names.indexOf(k) > -1); }); }
+  async function switchLayer(name, myRun){
+    var needed = name === 'end' ? ['dash','end'] : [name];
+    var shown = shownLayers();
+    var subset = function(a, b){ return a.every(function(x){ return b.indexOf(x) > -1; }); };
+    if (subset(shown, needed) || subset(needed, shown)){ setLayers(needed); return; }
+    setLayers([]);
+    await wait(600, myRun);
+    setLayers(needed);
+  }
+  function showPane(name){ panes.forEach(function(p){ p.classList.toggle('show', p.dataset.pane === name); }); }
+  function currentPane(){ return panes.filter(function(p){ return p.classList.contains('show'); })[0]; }
+  async function switchPane(name, myRun){
+    panes.forEach(function(p){ p.classList.remove('show'); });
+    await wait(500, myRun);
+    showPane(name);
+  }
+  async function enter(name, myRun, withTracker){
+    await switchLayer('dash', myRun);
+    dashWindow.classList.remove('closing');
+    var cur = currentPane();
+    if (!cur || cur.dataset.pane !== name) await switchPane(name, myRun);
+    tracker.classList.toggle('show', withTracker !== false);
+  }
+  function setTracker(idx){
+    tsteps.forEach(function(s, i){
+      s.classList.toggle('active', i === idx);
+      s.classList.toggle('done', i < idx);
+    });
+  }
+
+  // ---------- table state ----------
+  function cell(row, c){ return rowEls[row].querySelector('[data-c="' + c + '"]'); }
+  function blankRow(k){
+    ['contact','acct','inv'].forEach(function(c){ cell(k, c).innerHTML = '<span class="ph">-</span>'; });
+    rowEls[k].classList.remove('pick');
+  }
+  function codeRow(k){
+    var d = DATA[k];
+    cell(k, 'contact').innerHTML = d.contact ? d.contact : '<span class="ph">-</span>';
+    cell(k, 'acct').innerHTML = d.acct ? d.acct : '<span class="ph">-</span>';
+  }
+  function matchRow(k){
+    var d = DATA[k];
+    cell(k, 'inv').innerHTML = '<span class="inv ' + d.cls + '">' + d.inv + '</span>';
+  }
+  function setTable(state){
+    ['print','cater','taxi','sub'].forEach(function(k){
+      blankRow(k);
+      if (state === 'coded1' && k === 'print') codeRow(k);
+      if (state === 'full'){ codeRow(k); matchRow(k); }
+    });
+    legend.classList.toggle('show', state === 'full');
+    legendNote.classList.toggle('show', state === 'full');
+  }
+
+  // ---------- review modal state ----------
+  function fillRv(key){
+    var row = rvFields.filter(function(r){ return r.dataset.rv === key; })[0];
+    if (!row) return;
+    row.querySelector('.rv-field-value').textContent = rvValues[key];
+    row.classList.add('filled');
+  }
+  function setModal(state){
+    rvFields.forEach(function(r){
+      r.classList.remove('filled');
+      r.querySelector('.rv-field-value').innerHTML = '<span class="ph">-</span>';
+    });
+    var coded = state === 'coded' || state === 'found';
+    if (coded){ fillRv('contact'); fillRv('account'); fillRv('tax'); }
+    rvLearned.classList.toggle('show', coded);
+    rvSearch.classList.toggle('show', state === 'found');
+    rvFound.classList.toggle('show', state === 'found');
+    rvPdf.classList.toggle('show', state === 'found');
+  }
+
+  // ---------- push state ----------
+  function setPush(state){
+    var full = state === 'done';
+    pushRows.forEach(function(r){ r.classList.toggle('in', full); r.classList.remove('hl'); });
+    pushHeld.classList.toggle('show', full);
+    token.classList.toggle('show', full);
+    pushBtn.classList.toggle('off', !full);
+    pushBtn.classList.remove('pressed');
+    pushSuccess.classList.toggle('show', full);
+  }
+  function resetAll(){
+    uploadStatus.classList.remove('show','done');
+    uploadStatus.textContent = 'Reading statement lines...';
+    uploadSplit.classList.remove('show');
+    setTable('raw');
+    setModal('empty');
+    setPush('empty');
+    dashWindow.classList.remove('closing');
+  }
+
+  // ---------- scenes ----------
+  async function sceneTitle(r){
+    await switchLayer('title', r);
+    tracker.classList.remove('show');
+    setCaption('');
+    resetAll();
+    panes.forEach(function(p){ p.classList.remove('show'); });
+    await wait(5000, r);
+  }
+  async function sceneUpload(r){
+    resetAll();
+    await enter('upload', r, false);
+    setCaption('Drop in a bank statement. Incoming payments are skipped.');
+    await wait(600, r);
+    uploadStatus.classList.add('show');
+    await wait(900, r);
+    uploadStatus.textContent = '5 lines found';
+    uploadStatus.classList.add('done');
+    await wait(600, r);
+    uploadSplit.classList.add('show');
+    await wait(1500, r);
+  }
+  async function sceneTable(r){
+    setTable('raw');
+    await enter('table', r);
+    setTracker(0);
+    setCaption('Each bank line becomes a bill to code.');
+    await wait(1800, r);
+    rowEls.print.classList.add('pick');
+    await wait(1500, r);
+  }
+  async function sceneCoding(r){
+    setModal('empty');
+    await enter('review', r);
+    setTracker(0);
+    setCaption('A saved rule for this supplier fills the coding.');
+    await wait(700, r);
+    fillRv('contact'); await wait(400, r);
+    fillRv('account'); await wait(400, r);
+    fillRv('tax'); await wait(400, r);
+    rvLearned.classList.add('show');
+    await wait(1400, r);
+  }
+  async function sceneFind(r){
+    setModal('coded');
+    await enter('review', r);
+    setTracker(1);
+    setCaption('It searches Gmail, within 21 days of the charge.');
+    await wait(700, r);
+    rvSearch.classList.add('show');
+    await wait(1200, r);
+    rvFound.classList.add('show');
+    await wait(1400, r);
+    setCaption('A PDF match of 90% or more attaches itself.');
+    rvPdf.classList.add('show');
+    await wait(hold('A PDF match of 90% or more attaches itself.'), r);
+  }
+  async function sceneOutcomes(r){
+    setTable('coded1');
+    matchRow('print');
+    await enter('table', r);
+    setTracker(1);
+    var t = "Every outcome is shown, including 'no match found'.";
+    setCaption(t);
+    var order = ['cater','taxi','sub'];
+    for (var i = 0; i < order.length; i++){
+      await wait(550, r);
+      codeRow(order[i]);
+      matchRow(order[i]);
+    }
+    await wait(Math.max(300, hold(t) - 1650), r);
+    legend.classList.add('show');
+    await wait(500, r);
+    legendNote.classList.add('show');
+    await say('It never guesses at photos of receipts.', r);
+  }
+  async function scenePush(r){
+    setPush('empty');
+    await enter('push', r);
+    setTracker(2);
+    var t1 = 'Pushing takes two steps, enforced by the server.';
+    setCaption(t1);
+    for (var i = 0; i < pushRows.length; i++){ pushRows[i].classList.add('in'); await wait(300, r); }
+    pushHeld.classList.add('show');
+    await wait(700, r);
+    token.classList.add('show');
+    await wait(600, r);
+    pushBtn.classList.remove('off');
+    await wait(500, r);
+    pushBtn.classList.add('pressed');
+    await wait(400, r);
+    pushSuccess.classList.add('show');
+    await wait(Math.max(400, hold(t1) - 3100), r);
+    pushRows[1].classList.add('hl');
+    await say('An existing draft is completed, never duplicated.', r);
+  }
+  async function sceneEnd(r){
+    await switchLayer('end', r);
+    dashWindow.classList.add('closing');
+    tracker.classList.remove('show');
+    await say('Draft-only, logged, and built in days.', r, 2200);
+  }
+
+  var scenes = [sceneTitle, sceneUpload, sceneTable, sceneCoding, sceneFind, sceneOutcomes, scenePush, sceneEnd];
+  var stepStart = [2, 4, 6];
+
+  async function run(myRun, from){
+    try{
+      for (var i = from; i < scenes.length; i++) await scenes[i](myRun);
+      await wait(700, myRun);
+      run(myRun, 0);
+    }catch(e){ /* superseded by a newer run */ }
+  }
+
+  function freezeOn(step){
+    resetAll();
+    if (step === 'title'){ setLayers(['title']); tracker.classList.remove('show'); return; }
+    setLayers(['dash']);
+    tracker.classList.add('show');
+    if (step === 'upload'){
+      tracker.classList.remove('show'); showPane('upload');
+      uploadStatus.textContent = '5 lines found';
+      uploadStatus.classList.add('show','done');
+      uploadSplit.classList.add('show');
+      setCaption('Drop in a bank statement. Incoming payments are skipped.');
+    }
+    if (step === 'table'){
+      setTracker(0); showPane('table'); rowEls.print.classList.add('pick');
+      setCaption('Each bank line becomes a bill to code.');
+    }
+    if (step === 'coding'){
+      setTracker(0); showPane('review'); setModal('coded');
+      setCaption('A saved rule for this supplier fills the coding.');
+    }
+    if (step === 'finding'){
+      setTracker(1); showPane('review'); setModal('found');
+      setCaption('A PDF match of 90% or more attaches itself.');
+    }
+    if (step === 'outcomes'){
+      setTracker(1); showPane('table'); setTable('full');
+      setCaption('It never guesses at photos of receipts.');
+    }
+    if (step === 'push'){
+      setTracker(2); showPane('push'); setPush('done'); pushRows[1].classList.add('hl');
+      setCaption('An existing draft is completed, never duplicated.');
+    }
+    if (step === 'end'){
+      showPane('push'); setPush('done');
+      tracker.classList.remove('show');
+      dashWindow.classList.add('closing');
+      setLayers(['dash','end']);
+      setCaption('Draft-only, logged, and built in days.');
+    }
+  }
+
+  function start(from){
+    runId++;
+    var myRun = runId;
+    paused = false;
+    pauseBtn.innerHTML = '&#10074;&#10074; pause';
+    stage.classList.remove('paused');
+    var debugStep = new URLSearchParams(location.search).get('debug');
+    if (debugStep){ freezeOn(debugStep); return; }
+    if (reduced){ freezeOn('end'); return; }
+    run(myRun, from || 0);
+  }
+
+  pauseBtn.addEventListener('click', function(){
+    paused = !paused;
+    stage.classList.toggle('paused', paused);
+    pauseBtn.innerHTML = paused ? '&#9654; resume' : '&#10074;&#10074; pause';
+  });
+  replayBtn.addEventListener('click', function(){ start(0); });
+  tsteps.forEach(function(s, i){
+    s.addEventListener('click', function(){ start(stepStart[i]); });
+  });
+  start(0);
+})();
+</script>
+</body>
+</html>

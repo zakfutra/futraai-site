@@ -1,0 +1,951 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Site Survey Demo</title>
+<style>
+  html,body{overflow:hidden;height:100%}
+</style>
+<style>
+  /* Layout: a phone mockup is the lead actor throughout (this is a field app,
+     not a desktop tool). A persistent 3-step tracker pinned top-center tells a
+     skimming viewer where they are, and each step is clickable. A title card
+     opens with the claim before any UI is shown. The voice step includes the
+     required-field check, because "it will not send an incomplete report" is
+     the trust point. Deliberate dark "theatre" treatment, single theme by
+     choice: this is a recording stage, not a read surface. */
+  :root{
+    --ink:#0a0a0a;
+    --panel:#141414;
+    --paper:#f5f5f3;
+    --text:#f5f5f3;
+    --dim:rgba(245,245,243,.55);
+    --accent:#ff5a1f;
+    --stop:#ff8a8a;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--text);
+    font-family:'Instrument Sans',system-ui,sans-serif;
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    padding:28px 16px;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--dim);
+  }
+  .stage-wrap{width:100%;max-width:520px}
+  .stage{
+    position:relative;
+    width:100%;
+    aspect-ratio:4/5;
+    background:var(--ink);
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 30px 60px -20px rgba(0,0,0,.6);
+  }
+  .stage.paused *{animation-play-state:paused!important}
+  .brand{
+    position:absolute;bottom:14px;right:18px;z-index:9;
+    font-family:'Playfair Display',serif;font-weight:400;font-size:13px;
+    color:var(--dim);letter-spacing:.02em;
+    opacity:.8;
+  }
+  .brand span{color:var(--accent);font-style:italic}
+
+  /* ---------- step tracker (persistent, top-center, clickable) ---------- */
+  .tracker{
+    position:absolute;top:12px;left:0;right:0;z-index:9;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    opacity:0;transition:opacity .4s ease;
+    pointer-events:none;
+  }
+  .tracker.show{opacity:1;pointer-events:auto}
+  .tstep{
+    display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.03em;
+    color:var(--dim);
+    padding:5px 10px 5px 7px;border-radius:20px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+    transition:color .3s ease, background .3s ease, border-color .3s ease;
+  }
+  .tstep:hover{border-color:rgba(255,255,255,.25)}
+  .tstep:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .tstep .tnum{
+    width:16px;height:16px;border-radius:50%;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;background:rgba(255,255,255,.08);color:var(--dim);
+    transition:background .3s ease, color .3s ease;
+  }
+  .tstep.active{color:var(--text);background:rgba(255,90,31,.1);border-color:rgba(255,90,31,.35)}
+  .tstep.active .tnum{background:var(--accent);color:var(--ink)}
+  .tstep.done .tnum{background:rgba(255,90,31,.3);color:var(--text)}
+  .ttrack{width:16px;height:1px;background:rgba(255,255,255,.12)}
+
+  /* ---------- shared layer mechanics ---------- */
+  .layer{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;
+    transition:opacity .5s ease;
+  }
+  .layer.show{opacity:1}
+
+  /* ---------- title scene ---------- */
+  .title-wrap{text-align:left;max-width:400px;padding:0 32px;display:flex;flex-direction:column;gap:16px}
+  .title-for{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;
+    color:var(--dim);text-transform:uppercase;
+    opacity:0;transform:translateY(8px);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  .title-main{
+    font-family:'Playfair Display',serif;font-weight:400;
+    font-size:clamp(24px,7vw,32px);line-height:1.18;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .5s ease .12s, transform .5s ease .12s;
+  }
+  .title-problem{
+    font-size:14px;line-height:1.45;color:var(--dim);margin:0;
+    opacity:0;transform:translateY(10px);transition:opacity .5s ease .22s, transform .5s ease .22s;
+  }
+  .title-example{
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.04em;color:var(--accent);
+    opacity:0;transform:translateY(10px);transition:opacity .5s ease .28s, transform .5s ease .28s;
+  }
+  .title-saves{
+    display:flex;flex-direction:column;gap:9px;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .5s ease .34s, transform .5s ease .34s;
+  }
+  .title-saves-label{
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;
+    color:var(--dim);text-transform:uppercase;
+  }
+  .title-save-row{display:flex;align-items:baseline;gap:8px;font-family:'Instrument Sans',sans-serif;font-size:13.5px;color:var(--text)}
+  .title-save-row b{font-family:'Instrument Sans',sans-serif;color:var(--accent);font-weight:600;white-space:nowrap}
+  .layer[data-layer="title"].show .title-for,
+  .layer[data-layer="title"].show .title-main,
+  .layer[data-layer="title"].show .title-problem,
+  .layer[data-layer="title"].show .title-example,
+  .layer[data-layer="title"].show .title-saves{opacity:1;transform:translateY(0)}
+
+  /* ---------- end scene ---------- */
+  .layer[data-layer="end"]{z-index:7;padding-bottom:70px;background:rgba(10,10,10,.92)}
+  .end-wrap{max-width:400px;padding:0 32px;display:flex;flex-direction:column;gap:12px;
+    opacity:0;transform:translateY(8px);transition:opacity .5s ease .15s, transform .5s ease .15s}
+  .layer[data-layer="end"].show .end-wrap{opacity:1;transform:translateY(0)}
+
+  /* ---------- phone mockup ---------- */
+  .phone-stand{
+    position:relative;height:100%;display:flex;align-items:flex-start;justify-content:center;padding-top:70px;
+  }
+  .phone{
+    position:relative;
+    width:232px;
+    aspect-ratio:9/19.5;
+    background:#05080c;
+    border-radius:34px;
+    padding:10px;
+    box-shadow:0 24px 50px -16px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .phone-screen{
+    position:relative;width:100%;height:100%;border-radius:25px;overflow:hidden;
+    background:var(--panel);display:flex;flex-direction:column;
+  }
+  .phone-notch{
+    position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    width:64px;height:16px;border-radius:10px;background:#000;z-index:3;
+    box-shadow:0 0 0 1px rgba(255,255,255,.04);
+  }
+  .phone-bar{
+    flex:0 0 auto;padding:16px 14px 8px;display:flex;align-items:center;justify-content:space-between;
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);
+  }
+  .phone-body{flex:1;position:relative;min-height:0}
+
+  /* voice view */
+  .fields-view{position:absolute;inset:0;padding:4px 14px 12px;display:flex;flex-direction:column;gap:9px}
+  .voice-sub{opacity:0;pointer-events:none;transition:opacity .4s ease}
+  .voice-sub.show{opacity:1}
+  .transcript-box{
+    flex:1;overflow:hidden;
+    font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.6;color:var(--text);
+  }
+  .caret{display:inline-block;width:2px;height:13px;background:var(--accent);margin-left:2px;vertical-align:-2px;animation:blink 1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .extract-icon{width:14px;height:14px;flex:0 0 auto;color:var(--accent)}
+
+  /* photos & plan: three sequential pop-up cards */
+  .popup-stage{position:absolute;inset:0;padding:10px 14px}
+  .popup-sub{
+    position:absolute;inset:0;padding:10px 14px;
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;transition:opacity .4s ease;
+  }
+  .popup-sub.show{opacity:1}
+  .popup-card{
+    width:100%;max-width:204px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+    border-radius:14px;padding:16px 14px;
+    display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;
+  }
+  .popup-icon{
+    width:36px;height:36px;border-radius:50%;flex:0 0 auto;
+    background:rgba(255,90,31,.12);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .popup-icon svg{width:17px;height:17px}
+  .popup-title{font-family:'Instrument Sans',sans-serif;font-weight:600;font-size:13px;color:var(--text)}
+  .popup-status{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
+  .popup-check{width:11px;height:11px;flex:0 0 auto;opacity:0;color:var(--accent);transition:opacity .25s ease}
+  .popup-status.done .popup-check{opacity:1}
+  .popup-status.done span{color:var(--text)}
+
+  .popup-photogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%}
+  .pg-tile{aspect-ratio:1;border-radius:4px;opacity:0;transform:scale(.82);transition:opacity .3s ease,transform .3s ease;overflow:hidden;position:relative}
+  .pg-tile.show{opacity:1;transform:scale(1)}
+  .pg-tile.pg1{background:linear-gradient(180deg,#5d7480 0 38%,#2c4150 38% 100%)}
+  .pg-tile.pg2{background:linear-gradient(180deg,#6b6a62 0 45%,#3b3a36 45% 100%)}
+  .pg-tile.pg3{background:linear-gradient(180deg,#4d6657 0 30%,#27382e 30% 100%)}
+  .pg-tile.pg4{background:linear-gradient(180deg,#5a5f6e 0 52%,#262a35 52% 100%)}
+  .pg-tile.pg5{background:linear-gradient(180deg,#76695b 0 40%,#352c24 40% 100%)}
+  .pg-tile.pg6{background:linear-gradient(180deg,#566b7d 0 35%,#1f3342 35% 100%)}
+  .pg-tile::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34%;background:rgba(255,255,255,.07)}
+
+  .popup-map{position:relative;width:100%;aspect-ratio:16/10;border-radius:8px;overflow:hidden;background:#20291e}
+  .map-grid{
+    position:absolute;inset:0;
+    background:
+      linear-gradient(180deg,transparent 0 58%,#2c4a5c 58% 100%),
+      radial-gradient(ellipse 60px 40px at 20% 30%, rgba(90,110,70,.9), transparent 70%),
+      radial-gradient(ellipse 70px 50px at 75% 35%, rgba(60,85,55,.85), transparent 70%),
+      linear-gradient(160deg,#3a4a30,#26331f 70%);
+  }
+  .map-grid::after{content:"";position:absolute;left:0;right:0;top:56%;height:3px;background:rgba(220,220,205,.55)}
+  .map-pin{
+    position:absolute;left:50%;top:56%;width:10px;height:10px;margin:-9px 0 0 -5px;
+    border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--accent);
+    opacity:0;transition:opacity .3s ease;
+  }
+  .map-pin.show{opacity:1}
+  .map-ping{
+    position:absolute;left:50%;top:56%;width:10px;height:10px;margin:-5px 0 0 -5px;
+    border-radius:50%;border:2px solid var(--accent);opacity:0;
+  }
+  .map-ping.go{animation:mapping 1.1s ease-out}
+  @keyframes mapping{from{transform:scale(.3);opacity:1}to{transform:scale(4);opacity:0}}
+
+  .popup-sketch-wrap{position:relative;width:96px;height:64px;flex:0 0 auto}
+  .sketch-rough,.sketch-clean{position:absolute;inset:0;width:100%;height:100%;transition:opacity .4s ease}
+  .sketch-rough{color:var(--dim);opacity:1}
+  .sketch-clean{color:var(--accent);opacity:0}
+  .popup-sketch-wrap.done .sketch-rough{opacity:0}
+  .popup-sketch-wrap.done .sketch-clean{opacity:1}
+  .mic-row{
+    flex:0 0 auto;display:flex;align-items:center;gap:8px;
+    padding:8px 10px;border-radius:10px;background:rgba(255,90,31,.08);
+    border:1px solid rgba(255,90,31,.25);
+  }
+  .mic-dot{
+    width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;
+    animation:pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.5;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+  .mic-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text)}
+  .field-list{flex:0 0 auto;display:flex;flex-direction:column;gap:9px;padding-top:4px}
+  .field-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.1);
+    transition:border-color .3s ease;
+  }
+  .field-label{
+    flex:0 0 auto;
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--dim);display:flex;align-items:center;gap:4px;
+  }
+  .field-check{width:9px;height:9px;flex:0 0 auto;color:var(--accent);opacity:0;transition:opacity .25s ease}
+  .field-row.filled .field-check{opacity:1}
+  .field-value{
+    flex:1;min-width:0;text-align:right;
+    font-family:'Instrument Sans',sans-serif;font-size:11.5px;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .field-value .ph{color:rgba(255,255,255,.22)}
+  .field-row.missing{border-bottom-color:rgba(255,120,120,.5)}
+  .field-row.missing .field-label,.field-row.missing .field-value{color:var(--stop)}
+  .say-line{
+    font-family:'Instrument Sans',sans-serif;font-size:12px;font-style:italic;color:var(--text);line-height:1.4;
+    opacity:0;transition:opacity .3s ease;min-height:34px;
+  }
+  .say-line.show{opacity:1}
+  .send-row{
+    margin-top:auto;display:flex;flex-direction:column;gap:7px;
+    opacity:0;transition:opacity .35s ease;
+  }
+  .send-row.show{opacity:1}
+  .req-msg{font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.4;color:var(--stop)}
+  .req-msg.ok{color:var(--accent)}
+  .send-btn{
+    background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;padding:8px 0;border-radius:8px;border:none;
+    font-family:'Instrument Sans',sans-serif;transition:opacity .3s ease, transform .15s ease;
+  }
+  .send-btn.off{opacity:.28}
+
+  /* sent toast, shown on the finished report */
+  .sent-toast{
+    position:absolute;right:14px;bottom:14px;transform:translateY(8px);
+    display:flex;align-items:center;gap:6px;white-space:nowrap;
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink);
+    background:var(--accent);padding:6px 12px;border-radius:20px;
+    box-shadow:0 8px 16px -6px rgba(0,0,0,.35);
+    opacity:0;transition:opacity .4s ease, transform .4s ease;
+  }
+  .sent-toast svg{width:12px;height:12px}
+  .sent-toast.show{opacity:1;transform:translateY(0)}
+
+  .phone-pane{position:absolute;inset:0;opacity:0;transform:translateY(6px);transition:opacity .4s ease, transform .4s ease;pointer-events:none}
+  .phone-pane.show{opacity:1;transform:translateY(0)}
+
+  /* ---------- report ---------- */
+  .report-wrap{position:relative;display:flex;align-items:center;justify-content:center;height:100%;width:100%;padding:66px 24px 90px;box-sizing:border-box}
+  .report{
+    position:relative;
+    width:100%;max-width:440px;height:100%;background:var(--paper);color:#171b22;
+    border-radius:8px;padding:clamp(12px,2vw,20px);
+    display:flex;flex-direction:column;gap:10px;
+    box-shadow:0 20px 40px -14px rgba(0,0,0,.5);
+    transform:translateY(10px) scale(.97);opacity:0;
+    transition:transform .5s cubic-bezier(.2,.8,.2,1), opacity .5s ease;
+  }
+  .layer.show .report{transform:translateY(0) scale(1);opacity:1}
+  .rep-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid rgba(0,0,0,.12);padding-bottom:8px}
+  .rep-mark{font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px}
+  .rep-mark span{color:#e0501a}
+  .rep-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:#5a6472;text-align:right;line-height:1.5}
+  .rep-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .rep-thumb{aspect-ratio:1;border-radius:4px}
+  .rep-thumb.r1{background:linear-gradient(180deg,#b9c4c9 0 40%,#7f8f99 40% 100%)}
+  .rep-thumb.r2{background:linear-gradient(180deg,#c2bfb4 0 45%,#8b887e 45% 100%)}
+  .rep-thumb.r3{background:linear-gradient(180deg,#aebdb4 0 32%,#7a8d82 32% 100%)}
+  .rep-thumb.sat{background:
+      linear-gradient(180deg,transparent 0 58%,#3f6a84 58% 100%),
+      radial-gradient(ellipse 14px 10px at 30% 30%, rgba(90,110,70,.9), transparent 70%),
+      linear-gradient(160deg,#4b5e3f,#2f3d27)}
+  .rep-thumb.sketch{background:#e7e9e3;display:flex;align-items:center;justify-content:center;color:#6f7467;padding:6px}
+  .rep-thumb.sketch svg{width:100%;height:100%}
+  .rep-sec-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#6f7787;margin-top:2px}
+  .rep-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+  .rep-field{display:flex;justify-content:space-between;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3a4048}
+  .rep-field span{white-space:nowrap}
+  .rep-field b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .rep-note{font-family:'Instrument Sans',sans-serif;font-size:11px;line-height:1.5;color:#3a4048}
+  .rep-field b{color:#171b22;font-family:'Instrument Sans',sans-serif;font-weight:600}
+
+  /* ---------- caption ---------- */
+  .caption-band{
+    position:absolute;left:0;right:0;bottom:0;z-index:8;
+    padding:16px 22px;
+    background:linear-gradient(to top, rgba(10,10,10,.92), rgba(10,10,10,0));
+    pointer-events:none;
+  }
+  .caption{
+    font-family:'Instrument Sans',sans-serif;font-weight:700;
+    font-size:clamp(14px,2.1vw,21px);
+    line-height:1.2;max-width:80%;
+    opacity:0;transform:translateY(5px);
+    transition:opacity .3s ease, transform .3s ease;
+  }
+  .caption.show{opacity:1;transform:translateY(0)}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex;gap:10px}
+  .ctl{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    color:var(--dim);background:transparent;border:1px solid rgba(255,255,255,.14);
+    padding:7px 14px;border-radius:7px;cursor:pointer;
+  }
+  .ctl:hover{color:var(--text);border-color:rgba(255,255,255,.3)}
+  .ctl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  @media (prefers-reduced-motion: reduce){
+    .layer,.phone-pane,.voice-sub,.tstep,.field-check,.sent-toast,.report,.caption,.mic-dot,.caret,.send-row,.say-line,.end-wrap{transition:none!important;animation:none!important}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<div class="eyebrow">Case study reel &#183; site survey tool</div>
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <div class="brand">Futra <span>AI</span></div>
+
+    <div class="tracker" id="tracker">
+      <button class="tstep" type="button" data-step="0"><span class="tnum">1</span>Fill, by voice</button>
+      <div class="ttrack"></div>
+      <button class="tstep" type="button" data-step="1"><span class="tnum">2</span>Photos &amp; plan</button>
+      <div class="ttrack"></div>
+      <button class="tstep" type="button" data-step="2"><span class="tnum">3</span>Report, auto&#8209;sent</button>
+    </div>
+
+    <div class="layer" id="layerTitle" data-layer="title">
+      <div class="title-wrap">
+        <div class="title-for">For field teams &amp; the agencies that run them</div>
+        <div class="title-main">One app, on every technician&#8217;s phone.</div>
+        <p class="title-problem">Every site visit ends in typed-up notes, and something always gets missed.</p>
+        <div class="title-example">Shown here: a commercial diving site survey</div>
+        <div class="title-saves">
+          <div class="title-saves-label">What it does</div>
+          <div class="title-save-row"><b>No write&#8209;up</b> afterwards, at all</div>
+          <div class="title-save-row"><b>Won&#8217;t send</b> an incomplete report</div>
+          <div class="title-save-row"><b>Same format</b>, every technician, every time</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer" id="layerPhone" data-layer="phone">
+      <div class="phone-stand">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="phone-bar"><span>10:16</span><span>SITE SURVEY</span></div>
+            <div class="phone-body">
+
+              <div class="phone-pane" data-phone-pane="voice">
+                <div class="fields-view voice-sub" data-voice-sub="transcript">
+                  <div class="mic-row"><div class="mic-dot"></div><div class="mic-label">listening&#8230;</div></div>
+                  <div class="transcript-box" id="transcriptBox"><span class="caret"></span></div>
+                </div>
+                <div class="fields-view voice-sub" data-voice-sub="fields">
+                  <div class="mic-row"><svg class="extract-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3v18M19 3v18M5 8h4M5 16h4M15 8h4M15 16h4"/></svg><div class="mic-label" id="micLabel">sorting into fields&#8230;</div></div>
+                  <div class="field-list">
+                    <div class="field-row" data-field="site">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Site</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="client">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Client</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="visited">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Visited</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="tidal">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Tidal</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="team">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Team</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="plant">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Plant</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="hazards">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Hazards</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                    <div class="field-row" data-field="recovery">
+                      <div class="field-label"><svg class="field-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>Recovery</div>
+                      <div class="field-value"><span class="ph">-</span></div>
+                    </div>
+                  </div>
+                  <div class="say-line" id="sayLine">&#8220;Recovery is the ladder off the pontoon.&#8221;</div>
+                  <div class="send-row" id="sendRow">
+                    <div class="req-msg" id="reqMsg">1 required field missing: Recovery</div>
+                    <button class="send-btn off" id="sendBtn" type="button">Send report</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="phone-pane" data-phone-pane="capture">
+                <div class="popup-stage">
+
+                  <div class="popup-sub" data-popup="photos">
+                    <div class="popup-card">
+                      <div class="popup-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.4"/></svg></div>
+                      <div class="popup-title">Upload site photos</div>
+                      <div class="popup-photogrid">
+                        <div class="pg-tile pg1"></div><div class="pg-tile pg2"></div><div class="pg-tile pg3"></div>
+                        <div class="pg-tile pg4"></div><div class="pg-tile pg5"></div><div class="pg-tile pg6"></div>
+                      </div>
+                      <div class="popup-status" data-status="photos"><svg class="popup-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg><span>6 photos added</span></div>
+                    </div>
+                  </div>
+
+                  <div class="popup-sub" data-popup="satellite">
+                    <div class="popup-card">
+                      <div class="popup-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.4"/></svg></div>
+                      <div class="popup-title">Capture satellite image</div>
+                      <div class="popup-map">
+                        <div class="map-grid"></div>
+                        <div class="map-ping"></div>
+                        <div class="map-pin"></div>
+                      </div>
+                      <div class="popup-status" data-status="satellite"><svg class="popup-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg><span>Satellite image captured</span></div>
+                    </div>
+                  </div>
+
+                  <div class="popup-sub" data-popup="sketch">
+                    <div class="popup-card">
+                      <div class="popup-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18c3-9 7-12 9-13-1 3-1 7 1 9 2-1 4-1 6 1-6 1-12 2-16 3Z"/></svg></div>
+                      <div class="popup-title">AI sketch digitisation</div>
+                      <div class="popup-sketch-wrap">
+                        <svg class="sketch-rough" viewBox="0 0 150 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M10 38 L142 36"/><path d="M11 40 L12 62 L140 63 L141 38"/><path d="M45 36 L44 18 L98 19 L97 35"/><path d="M118 63 L119 84"/></svg>
+                        <svg class="sketch-clean" viewBox="0 0 150 100" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 38 L140 38"/><path d="M10 38 L10 62 L140 62 L140 38"/><path d="M45 38 L45 18 L97 18 L97 38"/><path d="M118 62 L118 84"/></svg>
+                      </div>
+                      <div class="popup-status" data-status="sketch"><svg class="popup-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg><span>Digitised by AI</span></div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer" id="layerReport" data-layer="report">
+      <div class="report-wrap">
+        <div class="report">
+          <div class="rep-head">
+            <div class="rep-mark">FIELD SURVEY <span>REPORT</span></div>
+            <div class="rep-meta">AUTO&#8209;GENERATED<br>14 NOV 2026</div>
+          </div>
+          <div class="rep-sec-label">From the technician&#8217;s phone</div>
+          <div class="rep-fields">
+            <div class="rep-field"><span>Site</span><b>Harbour Wall B</b></div>
+            <div class="rep-field"><span>Client</span><b>Harbourside Ltd</b></div>
+            <div class="rep-field"><span>Visited</span><b>14 Nov, 10:16</b></div>
+            <div class="rep-field"><span>Tidal</span><b>Slack water 14:20</b></div>
+            <div class="rep-field"><span>Team</span><b>2 divers, 1 standby</b></div>
+            <div class="rep-field"><span>Plant</span><b>RIB, compressor, crane</b></div>
+            <div class="rep-field"><span>Hazards</span><b>Low viz below 8m</b></div>
+            <div class="rep-field"><span>Recovery</span><b>Ladder off pontoon</b></div>
+          </div>
+          <div class="rep-sec-label">Site photos, satellite &amp; plan</div>
+          <div class="rep-grid">
+            <div class="rep-thumb r1"></div><div class="rep-thumb r2"></div><div class="rep-thumb r3"></div>
+            <div class="rep-thumb sat"></div>
+            <div class="rep-thumb sketch"><svg viewBox="0 0 150 100" fill="none" stroke="currentColor" stroke-width="4"><path d="M10 38 L140 38"/><path d="M10 38 L10 62 L140 62 L140 38"/><path d="M45 38 L45 18 L97 18 L97 38"/><path d="M118 62 L118 84"/></svg></div>
+          </div>
+          <div class="rep-sec-label">Recommendations, from the technician&#8217;s note</div>
+          <div class="rep-note">Fender fixings on the east wall look worn. Recommend an inspection next quarter.</div>
+          <div class="sent-toast" id="sentToast">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12l5 5L20 6"/></svg>
+            Sent to the office
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer" id="layerEnd" data-layer="end">
+      <div class="end-wrap">
+        <div class="title-saves-label">What you can rely on</div>
+        <div class="title-save-row"><b>Required fields</b> must be filled before it will send</div>
+        <div class="title-save-row"><b>Same format</b> every time, for every technician</div>
+        <div class="title-save-row"><b>Sent</b> to the office, so nobody has to remember</div>
+      </div>
+    </div>
+
+    <div class="caption-band"><div class="caption" id="caption"></div></div>
+  </div>
+</div>
+<div class="controls">
+  <button class="ctl" id="pauseBtn" type="button">&#10074;&#10074; pause</button>
+  <button class="ctl" id="replayBtn" type="button">&#8635; play from start</button>
+</div>
+
+<script>
+(function(){
+  function $(id){ return document.getElementById(id); }
+  var layers = { title: $('layerTitle'), phone: $('layerPhone'), report: $('layerReport'), end: $('layerEnd') };
+  var stage = $('stage');
+  var tracker = $('tracker');
+  var tsteps = Array.prototype.slice.call(document.querySelectorAll('.tstep'));
+  var phonePanes = Array.prototype.slice.call(document.querySelectorAll('.phone-pane'));
+  var caption = $('caption');
+  var fieldRows = Array.prototype.slice.call(document.querySelectorAll('.field-row'));
+  var voiceSubs = Array.prototype.slice.call(document.querySelectorAll('.voice-sub'));
+  var popupSubs = Array.prototype.slice.call(document.querySelectorAll('.popup-sub'));
+  var pgTiles = Array.prototype.slice.call(document.querySelectorAll('.pg-tile'));
+  var mapPin = document.querySelector('.map-pin');
+  var mapPing = document.querySelector('.map-ping');
+  var sketchWrap = document.querySelector('.popup-sketch-wrap');
+  var transcriptBox = $('transcriptBox');
+  var micLabel = $('micLabel');
+  var sayLine = $('sayLine');
+  var sendRow = $('sendRow');
+  var reqMsg = $('reqMsg');
+  var sendBtn = $('sendBtn');
+  var sentToast = $('sentToast');
+  var pauseBtn = $('pauseBtn');
+  var replayBtn = $('replayBtn');
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var runId = 0;
+  var paused = false;
+
+  var fieldValues = {
+    site: 'Harbour Wall B',
+    client: 'Harbourside Ltd',
+    visited: '14 Nov 2026, 10:16',
+    tidal: 'Slack water 14:20',
+    team: '2 divers, 1 standby',
+    plant: 'RIB, compressor, crane',
+    hazards: 'Low viz below 8m',
+    recovery: 'Ladder off pontoon'
+  };
+  var firstSeven = ['site','client','visited','tidal','team','plant','hazards'];
+  var transcriptChunks = [
+    'so this is Harbour Wall B,',
+    'for Harbourside Ltd, visited this morning...',
+    'two divers and a standby,',
+    'RIB, compressor and crane on site,',
+    'slack water is about twenty past two,',
+    'viz is poor below eight metres, flag that as a hazard,',
+    'and the fender fixings on the east wall look worn, so recommend an inspection next quarter'
+  ];
+
+  // Waits for ms of unpaused time. A newer run makes the old one reject, which stops it.
+  function wait(ms, myRun){
+    return new Promise(function(resolve, reject){
+      var left = ms;
+      (function tick(){
+        if (myRun !== runId) return reject('stale');
+        if (!paused) left -= 50;
+        if (left <= 0) return resolve();
+        setTimeout(tick, 50);
+      })();
+    });
+  }
+  var capTimer;
+  function setCaption(text){
+    clearTimeout(capTimer);
+    caption.classList.remove('show');
+    capTimer = setTimeout(function(){
+      caption.textContent = text;
+      if (text) caption.classList.add('show');
+    }, 160);
+  }
+  // Shows a caption and holds long enough to read it: 0.35s a word plus 0.6s, never under 1.8s.
+  function hold(text){ return Math.max(1800, text.split(/\s+/).length * 350 + 600); }
+  async function say(text, myRun, extra){
+    setCaption(text);
+    await wait(hold(text) + (extra || 0), myRun);
+  }
+
+  function shownLayers(){ return Object.keys(layers).filter(function(k){ return layers[k].classList.contains('show'); }); }
+  function setLayers(names){ Object.keys(layers).forEach(function(k){ layers[k].classList.toggle('show', names.indexOf(k) > -1); }); }
+  async function switchLayer(name, myRun){
+    var needed = name === 'end' ? ['report','end'] : [name];
+    var shown = shownLayers();
+    var subset = function(a, b){ return a.every(function(x){ return b.indexOf(x) > -1; }); };
+    if (subset(shown, needed) || subset(needed, shown)){ setLayers(needed); return; }
+    setLayers([]);
+    await wait(600, myRun);
+    setLayers(needed);
+  }
+  function setTracker(idx){
+    tsteps.forEach(function(s, i){
+      s.classList.toggle('active', i === idx);
+      s.classList.toggle('done', i < idx);
+    });
+  }
+  function showPhonePane(name){ phonePanes.forEach(function(p){ p.classList.toggle('show', p.dataset.phonePane === name); }); }
+  function currentPhonePane(){ return phonePanes.filter(function(p){ return p.classList.contains('show'); })[0]; }
+  async function switchPhonePane(name, myRun){
+    phonePanes.forEach(function(p){ p.classList.remove('show'); });
+    await wait(500, myRun);
+    showPhonePane(name);
+  }
+  async function enterPhone(name, myRun){
+    await switchLayer('phone', myRun);
+    var cur = currentPhonePane();
+    if (!cur || cur.dataset.phonePane !== name) await switchPhonePane(name, myRun);
+    tracker.classList.add('show');
+  }
+  function showVoiceSub(name){ voiceSubs.forEach(function(v){ v.classList.toggle('show', v.dataset.voiceSub === name); }); }
+  async function switchVoiceSub(name, myRun){
+    voiceSubs.forEach(function(v){ v.classList.remove('show'); });
+    await wait(490, myRun);
+    showVoiceSub(name);
+  }
+  async function revealTranscript(chunks, myRun){
+    transcriptBox.innerHTML = '<span class="caret"></span>';
+    var text = '';
+    for (var i = 0; i < chunks.length; i++){
+      text += (i ? ' ' : '') + chunks[i];
+      transcriptBox.innerHTML = text + '<span class="caret"></span>';
+      await wait(520, myRun);
+    }
+  }
+  function fillField(key){
+    var row = fieldRows.filter(function(r){ return r.dataset.field === key; })[0];
+    if (!row) return;
+    row.querySelector('.field-value').textContent = fieldValues[key];
+    row.classList.remove('missing');
+    row.classList.add('filled');
+  }
+  function flagMissing(key){
+    var row = fieldRows.filter(function(r){ return r.dataset.field === key; })[0];
+    row.classList.remove('filled');
+    row.classList.add('missing');
+    row.querySelector('.field-value').textContent = 'Required';
+  }
+  function resetFields(){
+    fieldRows.forEach(function(r){
+      r.classList.remove('filled','missing');
+      r.querySelector('.field-value').innerHTML = '<span class="ph">-</span>';
+    });
+    sayLine.classList.remove('show');
+    sendRow.classList.remove('show');
+    sendBtn.classList.add('off');
+    reqMsg.textContent = '1 required field missing: Recovery';
+    reqMsg.classList.remove('ok');
+    micLabel.textContent = 'sorting into fields...';
+  }
+  // Puts the voice screen straight into a state: sorted (7 filled), missing, fixed.
+  function setVoiceState(state){
+    resetFields();
+    firstSeven.forEach(fillField);
+    if (state === 'sorted') return;
+    sendRow.classList.add('show');
+    if (state === 'missing'){ flagMissing('recovery'); return; }
+    if (state === 'fixed'){
+      fillField('recovery');
+      reqMsg.textContent = 'All required fields complete';
+      reqMsg.classList.add('ok');
+      sendBtn.classList.remove('off');
+      micLabel.textContent = 'all fields complete';
+    }
+  }
+  function showPopup(name){ popupSubs.forEach(function(p){ p.classList.toggle('show', p.dataset.popup === name); }); }
+  async function switchPopup(name, myRun){
+    popupSubs.forEach(function(p){ p.classList.remove('show'); });
+    await wait(500, myRun);
+    showPopup(name);
+  }
+  function resetPopups(){
+    pgTiles.forEach(function(t){ t.classList.remove('show'); });
+    mapPin.classList.remove('show');
+    sketchWrap.classList.remove('done');
+    document.querySelectorAll('.popup-status').forEach(function(s){ s.classList.remove('done'); });
+  }
+  async function runPhotosPopup(myRun){
+    for (var i = 0; i < pgTiles.length; i++){
+      pgTiles[i].classList.add('show');
+      await wait(140, myRun);
+    }
+    await wait(250, myRun);
+    document.querySelector('[data-status="photos"]').classList.add('done');
+  }
+  async function runSatellitePopup(myRun){
+    await wait(300, myRun);
+    mapPing.classList.remove('go'); void mapPing.offsetWidth; mapPing.classList.add('go');
+    await wait(500, myRun);
+    mapPin.classList.add('show');
+    await wait(400, myRun);
+    document.querySelector('[data-status="satellite"]').classList.add('done');
+  }
+  async function runSketchPopup(myRun){
+    await wait(500, myRun);
+    sketchWrap.classList.add('done');
+    await wait(400, myRun);
+    document.querySelector('[data-status="sketch"]').classList.add('done');
+  }
+  function resetAll(){
+    resetFields();
+    resetPopups();
+    transcriptBox.innerHTML = '<span class="caret"></span>';
+    sentToast.classList.remove('show');
+  }
+
+  // ---------- scenes ----------
+  async function sceneTitle(r){
+    await switchLayer('title', r);
+    tracker.classList.remove('show');
+    setCaption('');
+    resetAll();
+    phonePanes.forEach(function(p){ p.classList.remove('show'); });
+    voiceSubs.forEach(function(v){ v.classList.remove('show'); });
+    popupSubs.forEach(function(p){ p.classList.remove('show'); });
+    await wait(5000, r);
+  }
+  async function sceneVoice(r){
+    resetFields();
+    transcriptBox.innerHTML = '<span class="caret"></span>';
+    phonePanes.forEach(function(p){ p.classList.remove('show'); });
+    voiceSubs.forEach(function(v){ v.classList.remove('show'); });
+    await switchLayer('phone', r);
+    showPhonePane('voice');
+    showVoiceSub('transcript');
+    tracker.classList.add('show');
+    setTracker(0);
+    setCaption('A technician talks through the visit, in one go.');
+    await wait(500, r);
+    await revealTranscript(transcriptChunks, r);
+    await wait(600, r);
+
+    await switchVoiceSub('fields', r);
+    setCaption('That paragraph sorts itself into the required fields.');
+    await wait(400, r);
+    for (var i = 0; i < firstSeven.length; i++){ fillField(firstSeven[i]); await wait(300, r); }
+    await wait(400, r);
+
+    sendRow.classList.add('show');
+    flagMissing('recovery');
+    await say("It won't send until every required field is filled.", r);
+
+    micLabel.textContent = 'listening for: recovery';
+    sayLine.classList.add('show');
+    await wait(1400, r);
+    fillField('recovery');
+    reqMsg.textContent = 'All required fields complete';
+    reqMsg.classList.add('ok');
+    sendBtn.classList.remove('off');
+    micLabel.textContent = 'all fields complete';
+    await say("It asks for what's missing, then unlocks Send.", r, -1400);
+    await wait(600, r);
+  }
+  async function sceneCapture(r){
+    resetPopups();
+    await enterPhone('capture', r);
+    setTracker(1);
+    showPopup('photos');
+    setCaption('Site photos are added from the phone.');
+    await wait(300, r);
+    await runPhotosPopup(r);
+    await wait(1500, r);
+
+    await switchPopup('satellite', r);
+    setCaption('A satellite image of the location is captured.');
+    await runSatellitePopup(r);
+    await wait(1900, r);
+
+    await switchPopup('sketch', r);
+    setCaption('A hand sketch is digitised by AI.');
+    await runSketchPopup(r);
+    await wait(1700, r);
+  }
+  async function sceneReport(r){
+    sentToast.classList.remove('show');
+    await switchLayer('report', r);
+    tracker.classList.add('show');
+    setTracker(2);
+    await say('One formatted PDF, built from exactly what was captured.', r);
+    sentToast.classList.add('show');
+    await say('It sends itself to the office.', r);
+  }
+  async function sceneEnd(r){
+    await switchLayer('end', r);
+    tracker.classList.remove('show');
+    await say('Used on live jobs. Built in days.', r, 2200);
+  }
+
+  var scenes = [sceneTitle, sceneVoice, sceneCapture, sceneReport, sceneEnd];
+  var stepStart = [1, 2, 3];
+
+  async function run(myRun, from){
+    try{
+      for (var i = from; i < scenes.length; i++) await scenes[i](myRun);
+      await wait(700, myRun);
+      run(myRun, 0);
+    }catch(e){ /* superseded by a newer run */ }
+  }
+
+  function freezeOn(step){
+    resetAll();
+    if (step === 'title'){ setLayers(['title']); tracker.classList.remove('show'); return; }
+    if (step === 'transcript'){
+      setLayers(['phone']); tracker.classList.add('show'); setTracker(0);
+      showPhonePane('voice'); showVoiceSub('transcript');
+      transcriptBox.innerHTML = transcriptChunks.slice(0, 5).join(' ') + '<span class="caret"></span>';
+      setCaption('A technician talks through the visit, in one go.');
+      return;
+    }
+    if (step === 'report' || step === 'sent' || step === 'end'){
+      setLayers(step === 'end' ? ['report','end'] : ['report']);
+      tracker.classList.toggle('show', step !== 'end'); setTracker(2);
+      if (step === 'sent') sentToast.classList.add('show');
+      setCaption(step === 'report' ? 'One formatted PDF, built from exactly what was captured.'
+        : step === 'sent' ? 'It sends itself to the office.' : 'Used on live jobs. Built in days.');
+      return;
+    }
+    setLayers(['phone']); tracker.classList.add('show');
+    if (step === 'voice'){
+      setTracker(0); showPhonePane('voice'); showVoiceSub('fields');
+      ['site','client','visited','tidal','team'].forEach(fillField);
+      setCaption('That paragraph sorts itself into the required fields.');
+    }
+    if (step === 'missing'){
+      setTracker(0); showPhonePane('voice'); showVoiceSub('fields'); setVoiceState('missing');
+      setCaption("It won't send until every required field is filled.");
+    }
+    if (step === 'fixed'){
+      setTracker(0); showPhonePane('voice'); showVoiceSub('fields'); setVoiceState('fixed');
+      sayLine.classList.add('show');
+      setCaption("It asks for what's missing, then unlocks Send.");
+    }
+    if (step === 'photos'){
+      setTracker(1); showPhonePane('capture'); showPopup('photos');
+      pgTiles.forEach(function(t){ t.classList.add('show'); });
+      document.querySelector('[data-status="photos"]').classList.add('done');
+      setCaption('Site photos are added from the phone.');
+    }
+    if (step === 'satellite'){
+      setTracker(1); showPhonePane('capture'); showPopup('satellite');
+      mapPin.classList.add('show');
+      document.querySelector('[data-status="satellite"]').classList.add('done');
+      setCaption('A satellite image of the location is captured.');
+    }
+    if (step === 'sketch'){
+      setTracker(1); showPhonePane('capture'); showPopup('sketch');
+      sketchWrap.classList.add('done');
+      document.querySelector('[data-status="sketch"]').classList.add('done');
+      setCaption('A hand sketch is digitised by AI.');
+    }
+  }
+
+  function start(from){
+    runId++;
+    var myRun = runId;
+    paused = false;
+    pauseBtn.innerHTML = '&#10074;&#10074; pause';
+    stage.classList.remove('paused');
+    var debugStep = new URLSearchParams(location.search).get('debug');
+    if (debugStep){ freezeOn(debugStep); return; }
+    if (reduced){ freezeOn('end'); return; }
+    run(myRun, from || 0);
+  }
+
+  pauseBtn.addEventListener('click', function(){
+    paused = !paused;
+    stage.classList.toggle('paused', paused);
+    pauseBtn.innerHTML = paused ? '&#9654; resume' : '&#10074;&#10074; pause';
+  });
+  replayBtn.addEventListener('click', function(){ start(0); });
+  tsteps.forEach(function(s, i){
+    s.addEventListener('click', function(){ start(stepStart[i]); });
+  });
+  start(0);
+})();
+</script>
+</body>
+</html>
