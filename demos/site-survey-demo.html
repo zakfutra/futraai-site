@@ -926,6 +926,7 @@
   function start(from){
     runId++;
     var myRun = runId;
+    holding = false;
     paused = false;
     pauseBtn.innerHTML = '&#10074;&#10074; pause';
     stage.classList.remove('paused');
@@ -944,7 +945,20 @@
   tsteps.forEach(function(s, i){
     s.addEventListener('click', function(){ start(stepStart[i]); });
   });
-  start(0);
+  // Embedded on the page, the demo is loaded with ?hold=1: it shows its title
+  // slide and waits for the page to say it has been scrolled into view.
+  var holding = false;
+  window.addEventListener('message', function(e){
+    if (e.source !== window.parent || !e.data || e.data.type !== 'futra-demo-play') return;
+    if (holding) start(0);
+  });
+  var params = new URLSearchParams(location.search);
+  if (params.get('hold') === '1' && !params.get('debug') && !reduced){
+    holding = true;
+    freezeOn('title');
+  } else {
+    start(0);
+  }
 })();
 </script>
 </body>

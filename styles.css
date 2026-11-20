@@ -132,6 +132,15 @@ em{font-style:italic;color:var(--accent)}
 .prose{font-size:16.5px;line-height:1.7;color:var(--body);max-width:52ch}
 .prose-dim{color:var(--dim)}
 .who-copy{margin-top:22px}
+.who-grid{display:grid;grid-template-columns:minmax(0,290px) minmax(0,1fr);gap:56px;align-items:center}
+.who-grid .statement{margin:0}
+.who-grid .who-copy{margin-top:18px;text-wrap:pretty}
+.who-grid .statement + .who-copy{margin-top:24px}
+.who-photo{width:100%;height:auto;aspect-ratio:3/4;object-fit:cover;border-radius:14px;display:block}
+@media (max-width:720px){
+  .who-grid{grid-template-columns:1fr;gap:28px}
+  .who-photo{max-width:250px}
+}
 .build-head{font-size:19px;margin-bottom:14px}
 .build-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:36px}
 
@@ -154,7 +163,8 @@ em{font-style:italic;color:var(--accent)}
 
 /* ---------- case studies ---------- */
 .case-item{padding:44px 0;border-top:1px solid var(--rule)}
-.case-item:last-child{border-bottom:1px solid var(--rule)}
+.case-item:last-of-type{border-bottom:1px solid var(--rule)}
+.case-more{margin-top:28px}
 .case-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:24px}
 .case-head h3{font-size:26px}
 .case-head .num-label{flex:0 0 auto;margin:0}

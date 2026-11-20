@@ -1,6 +1,11 @@
-// Case study demos autoplay the moment they scroll into view, no button,
-// no click: each one starts itself the first time the visitor reaches it,
-// so it reads as part of the page rather than an embedded video player.
+// Case study demos are loaded as soon as the page opens, but held on their
+// first slide (the title card), so every card already shows a proper
+// thumbnail instead of an empty box. Each one starts playing the first time
+// the visitor scrolls to it, with no button and no click, so it reads as part
+// of the page rather than an embedded video player.
+//
+// The page tells a held demo to start by posting it a message. A demo opened
+// on its own (without ?hold=1) just plays straight away.
 //
 // Each demo reel was built as a fixed-size stage (see data-demo-width /
 // data-demo-height). Rather than letting it reflow into whatever narrow
@@ -18,7 +23,10 @@ document.querySelectorAll('.case-demo[data-demo-src]').forEach(function (demo) {
   var mobileWidth = parseInt(demo.getAttribute('data-demo-width-mobile'), 10);
   var mobileHeight = parseInt(demo.getAttribute('data-demo-height-mobile'), 10);
   var MOBILE_BELOW = 640;
-  var started = false;
+  var iframe = null;
+  var loaded = false;
+  var wantPlay = false;
+  var played = false;
 
   function dims() {
     if (mobileWidth && mobileHeight && demo.clientWidth < MOBILE_BELOW) {
@@ -27,7 +35,8 @@ document.querySelectorAll('.case-demo[data-demo-src]').forEach(function (demo) {
     return { w: designWidth, h: designHeight, mobile: false };
   }
 
-  function fit(iframe) {
+  function fit() {
+    if (!iframe) return;
     var d = dims();
     // The card's aspect ratio comes from a CSS class, so it has to follow the
     // design size or the scaled iframe is cropped or padded.
@@ -38,37 +47,48 @@ document.querySelectorAll('.case-demo[data-demo-src]').forEach(function (demo) {
     iframe.style.transform = 'scale(' + scale + ')';
   }
 
-  function start() {
-    if (started) return;
-    started = true;
+  // Tells the held demo to start. If it has not finished loading yet, the
+  // request is remembered and sent the moment it has.
+  function play() {
+    if (played) return;
+    if (!loaded) { wantPlay = true; return; }
+    played = true;
+    try { iframe.contentWindow.postMessage({ type: 'futra-demo-play' }, '*'); } catch (e) { /* nothing to do */ }
+  }
 
+  function create() {
     var src = demo.getAttribute('data-demo-src');
-    var iframe = document.createElement('iframe');
-    iframe.src = src + (src.indexOf('?') === -1 ? '?' : '&') + 'v=' + Date.now();
+    iframe = document.createElement('iframe');
+    iframe.src = src + (src.indexOf('?') === -1 ? '?' : '&') + 'hold=1&v=' + Date.now();
     iframe.title = demo.getAttribute('data-demo-title') || 'Case study demo';
-    iframe.loading = 'lazy';
+    iframe.addEventListener('load', function () {
+      loaded = true;
+      if (wantPlay) play();
+    });
     demo.appendChild(iframe);
-    fit(iframe);
+    fit();
 
     if (window.ResizeObserver) {
-      new ResizeObserver(function () { fit(iframe); }).observe(demo);
+      new ResizeObserver(fit).observe(demo);
     } else {
-      window.addEventListener('resize', function () { fit(iframe); });
+      window.addEventListener('resize', fit);
     }
   }
+
+  create();
 
   if (window.IntersectionObserver) {
     var observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (entry.isIntersecting) {
-          start();
+          play();
           observer.unobserve(demo);
         }
       });
     }, { rootMargin: '0px 0px -15% 0px', threshold: 0.6 });
     observer.observe(demo);
   } else {
-    // No IntersectionObserver support: fall back to starting immediately.
-    start();
+    // No IntersectionObserver support: start straight away.
+    play();
   }
 });
